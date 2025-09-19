@@ -1,0 +1,235 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NSE Stock Tracker</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { 
+        font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif; 
+        margin: 0; 
+        padding: 16px; 
+        width: 380px; 
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        min-height: 500px;
+      }
+      .container {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 12px;
+        padding: 20px;
+        color: #333;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      }
+      h1 { 
+        font-size: 20px; 
+        margin: 0 0 16px; 
+        color: #2c3e50;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .header-icon {
+        width: 24px;
+        height: 24px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 14px;
+      }
+      .market-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding: 8px 12px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border-left: 3px solid #667eea;
+      }
+      .exchange {
+        font-weight: 600;
+        color: #2c3e50;
+        font-size: 13px;
+      }
+      .last-updated {
+        font-size: 11px;
+        color: #e74c3c;
+      }
+      .controls { 
+        display: flex; 
+        align-items: center; 
+        gap: 12px; 
+        margin-bottom: 20px;
+      }
+      button { 
+        padding: 10px 16px; 
+        font-size: 13px; 
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      }
+      button:active {
+        transform: translateY(0);
+      }
+      .options-link { 
+        font-size: 13px; 
+        text-decoration: none; 
+        color: #667eea;
+        font-weight: 500;
+        padding: 8px 12px;
+        border-radius: 6px;
+        transition: background 0.2s ease;
+      }
+      .options-link:hover {
+        background: rgba(102, 126, 234, 0.1);
+      }
+      .status { 
+        color: #666; 
+        font-size: 13px; 
+        margin-bottom: 16px;
+        padding: 8px 12px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        border-left: 3px solid #667eea;
+      }
+      .stocks-list { 
+        list-style: none; 
+        padding: 0; 
+        margin: 0;
+      }
+      .stock-item { 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center;
+        padding: 12px 0; 
+        border-bottom: 1px solid #e9ecef; 
+        font-size: 14px;
+        transition: background 0.2s ease;
+      }
+      .stock-item:hover {
+        background: rgba(102, 126, 234, 0.05);
+        margin: 0 -12px;
+        padding-left: 12px;
+        padding-right: 12px;
+        border-radius: 6px;
+      }
+      .stock-item:last-child {
+        border-bottom: none;
+      }
+      .stock-symbol {
+        font-weight: 600;
+        color: #2c3e50;
+        font-size: 13px;
+      }
+      .stock-price {
+        font-weight: 700;
+        color: #27ae60;
+        font-size: 15px;
+      }
+      .stock-date {
+        font-size: 11px;
+        color: #95a5a6;
+        margin-top: 2px;
+      }
+      .stock-info {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+      }
+      .error { 
+        color: #e74c3c; 
+        font-size: 13px; 
+        margin-top: 12px; 
+        white-space: pre-wrap; 
+        padding: 12px;
+        background: #fdf2f2;
+        border-radius: 6px;
+        border-left: 3px solid #e74c3c;
+      }
+      .no-data {
+        text-align: center;
+        color: #95a5a6;
+        font-style: italic;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin: 16px 0;
+      }
+      .loading {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #667eea;
+      }
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid #e9ecef;
+        border-top: 2px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .sentiment-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; margin-top: 4px; }
+      .sentiment-pos { background: #e8f7ee; color: #1e7e34; border: 1px solid #b7e2c4; }
+      .sentiment-neu { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+      .sentiment-neg { background: #fdecec; color: #b91c1c; border: 1px solid #f7caca; }
+      .stock-item { cursor: move; }
+      .stock-item.dragging { opacity: 0.5; transform: rotate(2deg); }
+      .stock-item.drag-over { border-top: 2px solid #667eea; }
+      .reorder-btn { 
+        padding: 6px 10px; 
+        font-size: 11px; 
+        background: #f8f9fa; 
+        color: #667eea; 
+        border: 1px solid #e9ecef; 
+        border-radius: 4px; 
+        cursor: pointer;
+        margin-left: 8px;
+      }
+      .reorder-btn:hover { background: #e9ecef; }
+      .reorder-btn.active { background: #667eea; color: white; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>
+        <div class="header-icon">₹</div>
+        NSE Stock Tracker
+      </h1>
+      <div class="market-info">
+        <span class="exchange">NSE Equity</span>
+        <span class="last-updated" id="lastUpdated"></span>
+      </div>
+      <div class="controls">
+        <button id="refreshBtn">🔄 Refresh</button>
+        <button id="sentimentBtn">🧠 Analyze Sentiment</button>
+        <button id="reorderBtn" class="reorder-btn">📋 Reorder</button>
+        <a href="#" id="openOptions" class="options-link">⚙️ Options</a>
+      </div>
+      <ul id="list" class="stocks-list"></ul>
+      <div id="error" class="error" hidden></div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+  </html>
+
+

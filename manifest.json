@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "My Stock Tracker",
+  "version": "0.1.0",
+  "description": "Fetch closing prices for 10 Nifty 50 stocks via Upstox API.",
+  "action": {
+    "default_title": "Nifty 50 Closes",
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://api.upstox.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_page": "options.html"
+}
