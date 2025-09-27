@@ -112,20 +112,21 @@
         padding: 0; 
         margin: 0;
       }
-      .stock-item { 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center;
+      .stock-item {
         padding: 12px 0; 
         border-bottom: 1px solid #e9ecef; 
         font-size: 14px;
         transition: background 0.2s ease;
       }
+      .stock-item-main {
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center;
+      }
       .stock-item:hover {
         background: rgba(102, 126, 234, 0.05);
         margin: 0 -12px;
-        padding-left: 12px;
-        padding-right: 12px;
+        padding: 12px;
         border-radius: 6px;
       }
       .stock-item:last-child {
@@ -192,6 +193,15 @@
       .sentiment-pos { background: #e8f7ee; color: #1e7e34; border: 1px solid #b7e2c4; }
       .sentiment-neu { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
       .sentiment-neg { background: #fdecec; color: #b91c1c; border: 1px solid #f7caca; }
+      .stock-rationale { 
+        font-size: 12px; 
+        color: #555; 
+        margin-top: 8px; 
+        padding: 8px 12px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        border-left: 3px solid #667eea;
+      }
       .stock-item { cursor: move; }
       .stock-item.dragging { opacity: 0.5; transform: rotate(2deg); }
       .stock-item.drag-over { border-top: 2px solid #667eea; }
@@ -231,5 +241,3 @@
     <script src="popup.js"></script>
   </body>
   </html>
-
-

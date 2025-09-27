@@ -96,6 +96,9 @@ function render(rows) {
     li.className = 'stock-item';
     li.draggable = isReorderMode;
     li.dataset.instrumentKey = row.instrumentKey;
+
+    const main = document.createElement('div');
+    main.className = 'stock-item-main';
     
     const symbol = document.createElement('div');
     symbol.className = 'stock-symbol';
@@ -122,8 +125,15 @@ function render(rows) {
     info.appendChild(date);
     info.appendChild(badge);
     
-    li.appendChild(symbol);
-    li.appendChild(info);
+    main.appendChild(symbol);
+    main.appendChild(info);
+
+    const rationale = document.createElement('div');
+    rationale.className = 'stock-rationale';
+    rationale.hidden = true;
+
+    li.appendChild(main);
+    li.appendChild(rationale);
     listEl.appendChild(li);
   }
   
@@ -136,19 +146,32 @@ function render(rows) {
 function applySentimentToUI(items) {
   const bySymbol = new Map();
   for (const it of items) bySymbol.set((it.symbol || '').toUpperCase(), it);
-  const badges = listEl.querySelectorAll('.sentiment-badge');
-  badges.forEach(badge => {
+  const stockItems = listEl.querySelectorAll('.stock-item');
+  stockItems.forEach(item => {
+    const badge = item.querySelector('.sentiment-badge');
+    const rationaleEl = item.querySelector('.stock-rationale');
+    if (!badge || !rationaleEl) return;
+
     const sym = (badge.dataset.symbol || '').toUpperCase();
     const it = bySymbol.get(sym);
     if (!it) return;
+
     badge.classList.remove('sentiment-pos', 'sentiment-neu', 'sentiment-neg');
     let cls = 'sentiment-neu';
     if (/buy/i.test(it.action)) cls = 'sentiment-pos';
     else if (/sell/i.test(it.action)) cls = 'sentiment-neg';
     badge.classList.add(cls);
+
     const conf = typeof it.confidence === 'number' ? ` ${(it.confidence * 100).toFixed(0)}%` : '';
     badge.textContent = `${it.action}${conf}`;
     badge.title = it.rationale || '';
+    
+    if (it.rationale) {
+      rationaleEl.innerHTML = `<strong>Reason:</strong> ${it.rationale}`;
+      rationaleEl.hidden = false;
+    } else {
+      rationaleEl.hidden = true;
+    }
   });
 }
 
@@ -317,5 +340,3 @@ reorderBtn?.addEventListener('click', toggleReorderMode);
 
 // Auto-load when popup opens
 refresh();
-
-

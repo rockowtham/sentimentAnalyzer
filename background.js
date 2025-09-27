@@ -64,52 +64,10 @@ async function fetchOhlcForInstruments(instrumentKeys) {
   return results;
 }
 
-async function analyzeSentimentForSymbols(symbols) {
-  const { geminiApiKey } = await getFromStorage([STORAGE_KEYS.geminiApiKey]);
-  console.log('Gemini API key present:', Boolean(geminiApiKey));
-  if (!geminiApiKey) {
-    throw new Error('Missing Gemini API key. Add it in Options.');
-  }
-
-  // Normalize symbols to plain tickers (uppercased)
-  const normSymbols = symbols.map(s => String(s || '').trim().toUpperCase());
-  console.log('Analyzing symbols:', normSymbols);
-
-  const prompt = `Return ONLY a JSON array. No prose.
-Schema: { "symbol": string, "action": "Buy"|"Sell"|"Hold", "confidence": number (0..1), "rationale": string }.
-Instructions:
-- For each symbol below, analyze the last 21 trading days (daily bars). Use these indicators:
-  • Price action & daily candlestick patterns
-  • Trend: 21-day SMA slope, 50-day SMA vs 200-day SMA (if 50/200 available)
-  • Momentum: RSI (14), MACD (12,26,9) histogram trend
-  • Bollinger Bands (20,2): price position relative to upper/middle/lower bands, band width (volatility), recent squeezes or expansions
-  • Volume: delivery volume % vs avg traded volume to detect accumulation/distribution
-  • Fibonacci retracement from the most recent swing high to swing low within the last 90 days to identify key support/resistance
-  • VWAP (for intraday bias if intraday available) — if not available, ignore
-  • Recent support/resistance zones (recent two pivots)
-- Decision rules (combine signals):
-  • Strong Buy (action "Buy", confidence >=0.75): price above rising 21-SMA, RSI between 45–70 (rising), MACD histogram positive & expanding, price near/above middle Bollinger Band with bands expanding, delivery volume trending up (accumulation), price above a key Fibonacci support — majority of indicators agree bullish.
-  • Buy (0.5–0.74): bullish majority indicators but with one moderate conflict (e.g., overbought RSI, price touching upper Bollinger Band, or flat volume).
-  • Hold (0.3–0.5): mixed/flat signals, shallow trend, price oscillating between Bollinger Bands, or insufficient confluence; choose Hold with mid confidence if indicators are neutral.
-  • Sell (<0.3): weak signals, poor technical setup, or insufficient data; if confidence below 30%, mark as Sell regardless of other factors.
-  • Sell (>=0.5): price below falling 21-SMA, RSI below 45 (falling), MACD histogram negative or contracting, price near/touching lower Bollinger Band with bands contracting, delivery volume high on down-days (distribution), price breaking key Fibonacci support — majority agree bearish.
-  • If data is insufficient (less than 15 daily bars or missing critical inputs), set action "Sell" and confidence 0.2 and state in rationale which data was missing.
-- Confidence scoring guidance:
-  • Start at 0.5. Add/subtract in 0.1–0.2 increments for each confirming/contradicting indicator. Cap at 1.0 and floor at 0.0.
-  • If >4 indicators strongly align, confidence >=0.8. If 2–3 align, 0.5–0.75. If conflicted, 0.3–0.5.
-- Rationale: one concise sentence (max 20 words) mentioning the primary drivers (e.g., "rising 21-SMA, positive MACD, increasing volume").
-- CRITICAL: If confidence is below 0.3, you MUST set action to "Sell" regardless of other factors.
-- Output: one JSON object per symbol in the order provided.
-Symbols: ${normSymbols.join(', ')}`;
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`;
+async function callGeminiApi(apiKey, history) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
   const body = {
-    contents: [
-      {
-        role: 'user',
-        parts: [ { text: prompt } ]
-      }
-    ],
+    contents: history,
     generationConfig: {
       temperature: 0.3,
       maxOutputTokens: 1024,
@@ -117,65 +75,112 @@ Symbols: ${normSymbols.join(', ')}`;
     }
   };
 
+  console.log('Calling Gemini API with history:', JSON.stringify(history, null, 2));
+
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
-  
-  console.log('Gemini API response status:', resp.status);
+
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
     console.error('Gemini API error response:', t);
     throw new Error(`Gemini API error ${resp.status}: ${t}`);
   }
-  
+
   const json = await resp.json();
-  console.log('Gemini API full response:', JSON.stringify(json, null, 2));
-  
   const part = json?.candidates?.[0]?.content?.parts?.[0];
   const text = typeof part?.text === 'string' ? part.text : '';
-  console.log('Gemini extracted text:', text);
-  
-  let parsed = [];
-  try {
-    if (text) {
-      // Check if response was truncated (ends with incomplete JSON)
-      let cleanText = text.trim();
-      if (cleanText.endsWith('"') || cleanText.endsWith(',')) {
-        console.warn('Response appears truncated, attempting to fix...');
-        // Try to close the JSON array
-        if (cleanText.includes('[') && !cleanText.endsWith(']')) {
-          cleanText = cleanText + ']';
-        }
-      }
-      parsed = JSON.parse(cleanText);
-      console.log('Successfully parsed Gemini response:', parsed);
-      
-      // Post-process: enforce <30% confidence = Sell rule
-      parsed = parsed.map(item => {
-        if (typeof item.confidence === 'number' && item.confidence < 0.3) {
-          console.log(`Forcing ${item.symbol} to Sell due to low confidence: ${item.confidence}`);
-          return {
-            ...item,
-            action: 'Sell',
-            rationale: `Low confidence (${(item.confidence * 100).toFixed(0)}%) - ${item.rationale || 'weak signals'}`
-          };
-        }
-        return item;
-      });
-    } else if (part?.inlineData?.data) {
-      const decoded = atob(part.inlineData.data);
-      parsed = JSON.parse(decoded);
-      console.log('Successfully parsed Gemini inlineData:', parsed);
-    } else {
-      throw new Error('Empty model response');
-    }
-  } catch (e) {
-    console.warn('Gemini parse failed, falling back. Raw text:', text, 'Error:', e);
-    parsed = normSymbols.map(s => ({ symbol: s, action: 'Hold', confidence: 0.2, rationale: 'API Parse Failed' }));
+  if (!text) {
+    throw new Error('Empty model response');
   }
-  return parsed;
+  return { text, fullResponse: json };
+}
+
+async function analyzeSentimentWithChain(symbols, geminiApiKey) {
+  const finalResults = [];
+
+  for (const symbol of symbols) {
+    try {
+      console.log(`Starting sentiment chain for ${symbol}`);
+      let history = [];
+
+      // Step 1: Get Raw Technical Data
+      const prompt1 = `You are a financial data API. For the stock symbol "${symbol}", provide the following technical indicators based on the last 21 trading days. Return ONLY a single JSON object.
+- RSI (14)
+- MACD (12,26,9) histogram trend (e.g., "positive & expanding")
+- Bollinger Bands (20,2) price position (e.g., "near upper band")
+- 21-day SMA slope (e.g., "rising")
+- Delivery volume trend (e.g., "increasing")
+- Key Fibonacci support/resistance from last 90-day swing.
+Schema: { "symbol": string, "rsi": number, "macd_trend": string, "bollinger": string, "sma21_slope": string, "volume_trend": string, "fibonacci_level": string }`;
+      history.push({ role: 'user', parts: [{ text: prompt1 }] });
+      const response1 = await callGeminiApi(geminiApiKey, history);
+      const technicalData = JSON.parse(response1.text);
+      history.push({ role: 'model', parts: [{ text: response1.text }] });
+      console.log(`[${symbol}] Step 1 - Raw Data:`, technicalData);
+
+      // Step 2: Interpret the Data
+      const prompt2 = `You are a technical analyst. Based on the following technical data for ${symbol}, provide a brief, one-sentence interpretation of the signals.
+Tool Result (Technical Data):
+${JSON.stringify(technicalData, null, 2)}
+Return ONLY a single JSON object with schema: { "symbol": string, "interpretation": string }`;
+      history.push({ role: 'user', parts: [{ text: prompt2 }] });
+      const response2 = await callGeminiApi(geminiApiKey, history);
+      const interpretation = JSON.parse(response2.text);
+      history.push({ role: 'model', parts: [{ text: response2.text }] });
+      console.log(`[${symbol}] Step 2 - Interpretation:`, interpretation);
+
+      // Step 3: Final Recommendation
+      const prompt3 = `You are a financial advisor. Based on the analyst's interpretation for ${symbol}, provide a final recommendation.
+Tool Result (Analyst Interpretation):
+${JSON.stringify(interpretation, null, 2)}
+Use the following decision rules:
+- If interpretation is strongly bullish (e.g., multiple positive indicators), action is "Buy" with confidence > 0.7.
+- If interpretation is moderately bullish, action is "Buy" with confidence 0.5-0.7.
+- If interpretation is mixed or neutral, action is "Hold" with confidence 0.3-0.5.
+- If interpretation is bearish, action is "Sell" with confidence > 0.5.
+- CRITICAL: If confidence is below 0.3, you MUST set action to "Sell".
+Return ONLY a single JSON object with schema: { "symbol": string, "action": "Buy"|"Sell"|"Hold", "confidence": number (0..1), "rationale": string }`;
+      history.push({ role: 'user', parts: [{ text: prompt3 }] });
+      const response3 = await callGeminiApi(geminiApiKey, history);
+      const finalRec = JSON.parse(response3.text);
+      console.log(`[${symbol}] Step 3 - Final Recommendation:`, finalRec);
+
+      // Post-process and add to results
+      if (typeof finalRec.confidence === 'number' && finalRec.confidence < 0.3) {
+        finalRec.action = 'Sell';
+        finalRec.rationale = `Low confidence (${(finalRec.confidence * 100).toFixed(0)}%) - ${finalRec.rationale || 'weak signals'}`;
+      }
+      finalResults.push(finalRec);
+
+    } catch (e) {
+      console.error(`Error in sentiment chain for ${symbol}:`, e);
+      finalResults.push({ symbol: symbol, action: 'Hold', confidence: 0.2, rationale: 'Analysis chain failed.' });
+    }
+  }
+  return finalResults;
+}
+
+
+async function analyzeSentimentForSymbols(symbols) {
+  const { geminiApiKey } = await getFromStorage([STORAGE_KEYS.geminiApiKey]);
+  console.log('Gemini API key present:', Boolean(geminiApiKey));
+  if (!geminiApiKey) {
+    throw new Error('Missing Gemini API key. Add it in Options.');
+  }
+
+  const normSymbols = symbols.map(s => String(s || '').trim().toUpperCase());
+  console.log('Analyzing symbols with chained method:', normSymbols);
+
+  try {
+    const results = await analyzeSentimentWithChain(normSymbols, geminiApiKey);
+    return results;
+  } catch (e) {
+    console.warn('Gemini chained call failed. Error:', e);
+    return normSymbols.map(s => ({ symbol: s, action: 'Hold', confidence: 0.2, rationale: 'API Call Failed' }));
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -209,5 +214,3 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // Keep message channel open for async response
   return true;
 });
-
-
